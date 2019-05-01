@@ -63,7 +63,7 @@ public class Main {
         System.out.println("###########################################################################################");
 
         String message = "this is a test file for a ftp client";
-        client.receiveText("STOR incoming/testfilnummer1.txt", message);
+        client.uploadTextFile("STOR incoming/testfilnummer1.txt", message);
     }
 
     private static StringBuilder getStringBuilder(FTPClient client) throws IOException {
