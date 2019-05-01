@@ -4,88 +4,81 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-
-/** Denne klasse er af pladshensyn skrevet meget kompakt. Den beste mÃ¥de at
- forstÃ¥ den er at prÃ¸ve den fra et program, f.eks BenytFtpForbindelse, og
- bruge trinvis gennemgang til at fÃ¸lge med i hvordan den fungerer. */
-
 public class FTPClient
 {
-    private Socket kontrol;
-    private PrintStream ud;
-    private BufferedReader ind;
+    private Socket clientSocket;
+    private PrintStream output;
+    private BufferedReader input;
 
-    /** Modtager værtens svar, der godt kan lÃ¸be over flere linjer. Sidste linje
-     er en svarkode pÃ¥ tre cifre, uden en bindestreg '-' pÃ¥ plads nummer 4 */
-    private String svar() throws IOException
+    private String replyFromServer() throws IOException
 {
     while (true) {
-        String s = ind.readLine();
-        System.out.println("modt: "+s);
-        if (s.length()>=3 && s.charAt(3)!='-' && Character.isDigit(s.charAt(0))
-                && Character.isDigit(s.charAt(1)) && Character.isDigit(s.charAt(2)))
-            return s;   // afslut lÃ¸kken og returner sidste linje med statuskode
+        String reply = input.readLine();
+        System.out.println("Server: " + reply);
+        if (reply.length()>=3 && reply.charAt(3)!='-' && Character.isDigit(reply.charAt(0))
+                && Character.isDigit(reply.charAt(1)) && Character.isDigit(reply.charAt(2)))
+            return reply;
     }
 }
 
-    public String sendKommando(String kommando) throws IOException
+    public String commandToServer(String commandLine) throws IOException
     {
-        System.out.println("send: "+kommando);
-        ud.println(kommando);
-        ud.flush();         // sÃ¸rg for at data sendes til værten fÃ¸r vi lÃ¦ser svar
-        return svar();
+        System.out.println("Client: " + commandLine);
+        output.println(commandLine);
+        output.flush();
+        return replyFromServer();
     }
 
-    public void forbind(String vært, String bruger, String kode)throws IOException
+    public void forbind(String vært, String username, String password)throws IOException
     {
-        kontrol = new Socket(vært,21);
-        ud  = new PrintStream(kontrol.getOutputStream());
-        ind = new BufferedReader(new InputStreamReader(kontrol.getInputStream()));
-        svar();                     // LÃ¦s velkomst fra vært
-        sendKommando("USER "+bruger);  // Send brugernavn
-        sendKommando("PASS "+kode);    // Send adgangskode
+        clientSocket = new Socket(vært,21);
+        output = new PrintStream(clientSocket.getOutputStream());
+        input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        replyFromServer();
+        commandToServer("USER " + username);
+        commandToServer("PASS " + password);
     }
 
-    /** FÃ¥ en forbindelse beregnet til at overfÃ¸re data (filer) til/fra værten */
-    private Socket skafDataforbindelse() throws IOException
+
+    private Socket getDataConnection() throws IOException
     {
-        String maskineOgPortnr = sendKommando("PASV");
-        StringTokenizer st = new StringTokenizer(maskineOgPortnr, "(,)");
-        if (st.countTokens() < 7) throw new IOException("Ikke logget ind");
-        st.nextToken(); // spring over 5 bidder fÃ¸r portnummer kommer
-        st.nextToken(); st.nextToken(); st.nextToken(); st.nextToken();
-        int portNr = 256*Integer.parseInt(st.nextToken())
-                + Integer.parseInt(st.nextToken());
-        return new Socket(kontrol.getInetAddress(), portNr); // forbind til porten
+        String newSocketPortConnection = commandToServer("PASV");
+        StringTokenizer stringToken = new StringTokenizer(newSocketPortConnection, "(,)");
+        if (stringToken.countTokens() < 7) throw new IOException("Not logged in...");
+        stringToken.nextToken();
+        stringToken.nextToken(); stringToken.nextToken(); stringToken.nextToken(); stringToken.nextToken();
+        int portNumber = 256*Integer.parseInt(stringToken.nextToken())
+                + Integer.parseInt(stringToken.nextToken());
+        return new Socket(clientSocket.getInetAddress(), portNumber);
     }
 
-    public void receiveText(String kommando, String data) throws IOException
+    public void uploadTextFile (String commandLine, String textLines) throws IOException
     {
-        Socket df = skafDataforbindelse();
-        PrintStream dataUd = new PrintStream( df.getOutputStream() );
-        sendKommando(kommando);        // f.eks STOR fil.txt
-        dataUd.print(data);
-        dataUd.close();
-        df.close();
-        svar();
+        Socket dataConnection = getDataConnection();
+        PrintStream dataOutPut = new PrintStream( dataConnection.getOutputStream() );
+        commandToServer(commandLine);
+        dataOutPut.print(textLines);
+        dataOutPut.close();
+        dataConnection.close();
+        replyFromServer();
     }
 
-    public String receiveText(String kommando) throws IOException
+    public String receiveText(String commandLine) throws IOException
     {
-        Socket df = skafDataforbindelse();
-        BufferedReader dataInd = new BufferedReader(new InputStreamReader(
-                df.getInputStream()));
-        sendKommando(kommando); // f.eks LIST eller RETR fil.txt
-        StringBuilder sb = new StringBuilder();
-        String s = dataInd.readLine();
-        while (s != null) {
-            System.out.println("data: "+s);
-            sb.append(s+"\n");
-            s = dataInd.readLine();
+        Socket dataConnection = getDataConnection();
+        BufferedReader dataInput = new BufferedReader(new InputStreamReader(
+                dataConnection.getInputStream()));
+        commandToServer(commandLine);
+        StringBuilder stringBuilder = new StringBuilder();
+        String nextString = dataInput.readLine();
+        while (nextString != null) {
+            System.out.println("Server: "+nextString);
+            stringBuilder.append(nextString+"\n");
+            nextString = dataInput.readLine();
         }
-        dataInd.close();
-        df.close();
-        svar();
-        return sb.toString(); // returnÃ©r en streng med de data vi fik fra værten
+        dataInput.close();
+        dataConnection.close();
+        replyFromServer();
+        return stringBuilder.toString();
     }
 }
